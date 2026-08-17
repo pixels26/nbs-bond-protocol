@@ -495,7 +495,7 @@ Maintains the canonical on-chain registry of all NbS projects eligible for bond 
 
 ### `CreditRetirement`
 
-Handles the permanent on-chain retirement of carbon and biodiversity credits. Retired credits are burned and a retirement certificate NFT is issued to the retiring wallet — usable for corporate net-zero disclosures.
+Handles the permanent on-chain retirement of carbon and biodiversity credits. Retired credits are burned and a retirement certificate is recorded for the retiring wallet, carrying the bond, project, oracle report and vintage year the credits originated from — usable for corporate net-zero disclosures. See [docs/retirement-certificates.md](docs/retirement-certificates.md).
 
 ---
 
@@ -716,21 +716,36 @@ cd contracts && cargo build --release && cd ..
 
 ```bash
 # 1. Configure environment
-cp api/.env.example api/.env
+cp .env.example api/.env
 # Edit api/.env with your Stellar keys and API credentials
 
 # 2. Deploy contracts to testnet
 ./scripts/deploy-testnet.sh
 
-# 3. Start the API server
+# 3. Seed one bond, two oracle providers, and a verified report
+set -a && source api/.env && set +a
+NODE_PATH=api/node_modules api/node_modules/.bin/ts-node --transpile-only scripts/seed-testnet.ts
+
+# 4. Start the API server
 cd api && npm run start:dev
 
-# 4. Start the Angular frontend
+# 5. Start the Angular frontend
 cd frontend && ng serve
 
-# 5. Open the app
+# 6. Open the app
 open http://localhost:4200
 ```
+
+### Wallet Requirement (Freighter)
+
+Signing in requires the [Freighter](https://www.freighter.app/) browser extension. If it is
+not installed, the app shows an install prompt linking to the listing for your browser
+(Chrome Web Store for Chrome, Brave and Edge; Firefox Add-ons for Firefox) rather than
+failing silently. Install the extension and use **I have installed it — retry** — no page
+reload needed, since Freighter injects itself as soon as its content script runs.
+
+Prompts you dismiss inside Freighter (connection or signature requests) are reported as
+declined, distinct from the extension being absent.
 
 ---
 
@@ -763,6 +778,8 @@ IPFS_API_URL=https://api.pinata.cloud
 IPFS_API_KEY=your_pinata_api_key
 IPFS_SECRET_KEY=your_pinata_secret_key
 IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs/
+IPFS_LOCAL_API_URL=http://localhost:5001/api/v0
+REQUIRE_IPFS_PINNING=false
 
 # ── Oracle ───────────────────────────────────────────────────────
 # Whitelisted provider addresses allowed to submit reports
@@ -784,6 +801,12 @@ PORT=3000
 NODE_ENV=development
 LOG_LEVEL=debug
 ```
+
+Project documents are uploaded and pinned directly through Pinata when both
+Pinata credentials are configured. Without credentials, non-production
+environments use `IPFS_LOCAL_API_URL` and log that remote pinning was skipped.
+Production always requires Pinata credentials; set `REQUIRE_IPFS_PINNING=true`
+to enforce the same behavior in another environment.
 
 ---
 
@@ -944,6 +967,8 @@ nbs-bond-protocol/
 | `POST` | `/oracle/reports` | Submit a measurement report (providers only) |
 | `GET` | `/oracle/reports/:projectId` | Get oracle history for a project |
 | `POST` | `/oracle/challenge/:reportId` | Challenge a submitted report |
+| `GET` | `/oracle/providers` | List registered oracle providers with stake and health |
+| `POST` | `/oracle/providers` | Register a new oracle provider (admin only) |
 
 ---
 
@@ -1001,7 +1026,7 @@ ng e2e
 # Deploy all contracts to Stellar testnet
 ./scripts/deploy-testnet.sh
 
-# The script writes contract addresses into .env automatically
+# The script writes contract addresses into api/.env automatically
 # BOND_ISSUER_ADDRESS=C...
 # COUPON_ENGINE_ADDRESS=C...
 # etc.

@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ContractService } from '../stellar/contract.service';
 import { StellarService } from '../stellar/stellar.service';
 import { NonceService } from '../common/services/nonce.service';
+import { toBytes32 } from '../stellar/bytes32';
 import { xdr, nativeToScVal, scValToNative, Address } from '@stellar/stellar-sdk';
 import { createClient, RedisClientType } from '@redis/client';
 import { CreateBondDto } from './dto/create-bond.dto';
@@ -89,14 +90,20 @@ export class BondsService {
     } catch {}
 
     const start = (page - 1) * limit;
-    const end = Math.min(start + limit, total);
 
-    for (let id = 1; id <= total; id++) {
-      if (id > start && id <= end) {
-        try {
-          bonds.push(await this.buildBondResponse(id));
-        } catch {}
-      }
+    const idsScVal = await this.contractService.simulateCall({
+      contractAddress: BOND_ISSUER(), method: 'get_bond_ids_range',
+      args: [
+        nativeToScVal(start, { type: 'u32' }),
+        nativeToScVal(limit, { type: 'u32' }),
+      ],
+    });
+    const ids = (scValToNative(idsScVal) as bigint[]).map(Number);
+
+    for (const id of ids) {
+      try {
+        bonds.push(await this.buildBondResponse(id));
+      } catch {}
     }
 
     const result = {
@@ -329,7 +336,7 @@ export class BondsService {
 
   private encodeBondConfig(dto: CreateBondDto): xdr.ScVal {
     return xdr.ScVal.scvVec([
-      xdr.ScVal.scvBytes(Buffer.from(dto.projectId, 'hex')),
+      toBytes32(dto.projectId),
       nativeToScVal(BigInt(dto.faceValue), { type: 'i128' }),
       xdr.ScVal.scvVec(dto.couponSchedule.map((ts) => nativeToScVal(BigInt(ts), { type: 'u64' }))),
       nativeToScVal(dto.creditType, { type: 'symbol' }),
